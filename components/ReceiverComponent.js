@@ -10,6 +10,10 @@ export default function ReceiverComponent() {
   const [audioCtx, setAudioCtx] = useState(null);
   const [error, setError] = useState('');
   const [manualRoomId, setManualRoomId] = useState('');
+  const [socket, setSocket] = useState(null);
+  const [isAudioEnabled, setIsAudioEnabled] = useState(false);
+  const [showQRScanner, setShowQRScanner] = useState(false);
+  const [isReceivingAudio, setIsReceivingAudio] = useState(false);
 
   useEffect(() => {
     // Initialize AudioContext only on client side
@@ -20,45 +24,64 @@ export default function ReceiverComponent() {
   }, []);
 
   useEffect(() => {
-    const code = router.query.room || manualRoomId;
+    const code = router.query.room;
     if (code && audioCtx) {
+      setManualRoomId(code);
       connectToRoom(code);
     }
-  }, [router.query.room, manualRoomId, audioCtx]);
+  }, [router.query.room, audioCtx]);
 
-  const connectToRoom = (code) => {
+  const connectToRoom = async (code) => {
     try {
       setError('');
       setRoomId(code);
-      // Connect to the same server that serves the Next.js app
-      const socket = io();
       
-      socket.emit('join-room', code);
+      // Disconnect existing socket if any
+      if (socket) {
+        socket.disconnect();
+      }
       
-      socket.on('connect', () => {
+      // Initialize socket connection
+      await fetch('/api/socket');
+      const newSocket = io();
+      setSocket(newSocket);
+      
+      newSocket.emit('join-room', code);
+      
+      newSocket.on('connect', () => {
         setIsConnected(true);
+        console.log('Connected to server');
       });
       
-      socket.on('disconnect', () => {
+      newSocket.on('disconnect', () => {
         setIsConnected(false);
+        setIsReceivingAudio(false);
+        console.log('Disconnected from server');
       });
 
-      socket.on('audio-chunk', async (data) => {
+      newSocket.on('audio-chunk', async (data) => {
         try {
+          setIsReceivingAudio(true);
+          
           if (audioCtx && audioCtx.state === 'suspended') {
             await audioCtx.resume();
+            setIsAudioEnabled(true);
           }
           
           const reader = new FileReader();
           reader.onloadend = async () => {
             try {
-              const buffer = await audioCtx.decodeAudioData(reader.result);
+              const audioBuffer = await audioCtx.decodeAudioData(reader.result);
               const source = audioCtx.createBufferSource();
-              source.buffer = buffer;
+              source.buffer = audioBuffer;
               source.connect(audioCtx.destination);
               source.start(0);
             } catch (err) {
               console.error('Error playing audio:', err);
+              if (err.name === 'InvalidStateError') {
+                // Try to resume audio context
+                await audioCtx.resume();
+              }
             }
           };
           reader.readAsArrayBuffer(data);
@@ -68,7 +91,7 @@ export default function ReceiverComponent() {
       });
 
       return () => {
-        socket.disconnect();
+        newSocket.disconnect();
       };
     } catch (err) {
       setError('Failed to connect to the room. Please check the room code.');
@@ -78,13 +101,34 @@ export default function ReceiverComponent() {
 
   const handleManualJoin = () => {
     if (manualRoomId.trim()) {
-      router.push(`/receiver?room=${manualRoomId.trim().toUpperCase()}`);
+      const code = manualRoomId.trim().toUpperCase();
+      router.push(`/receiver?room=${code}`);
     }
   };
 
   const enableAudio = async () => {
-    if (audioCtx && audioCtx.state === 'suspended') {
-      await audioCtx.resume();
+    try {
+      if (audioCtx && audioCtx.state === 'suspended') {
+        await audioCtx.resume();
+        setIsAudioEnabled(true);
+      }
+    } catch (err) {
+      console.error('Error enabling audio:', err);
+      setError('Failed to enable audio. Please try refreshing the page.');
+    }
+  };
+
+  const openQRScanner = () => {
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      setShowQRScanner(true);
+    } else {
+      setError('Camera not available. Please enter the room code manually or open the shared link.');
+    }
+  };
+
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      handleManualJoin();
     }
   };
 
@@ -101,36 +145,60 @@ export default function ReceiverComponent() {
 
         {!roomId ? (
           <div>
-            <h2>Enter Room Code</h2>
+            <h2>Join a Stream</h2>
+            
+            {/* QR Code Scanning Instructions */}
+            <div style={{ 
+              background: 'rgba(255, 255, 255, 0.1)', 
+              padding: '1.5rem', 
+              borderRadius: '15px', 
+              margin: '1.5rem 0' 
+            }}>
+              <h3 style={{ marginBottom: '1rem' }}>📱 How to Join:</h3>
+              <div style={{ textAlign: 'left', lineHeight: '1.6' }}>
+                <p><strong>Method 1:</strong> Scan QR code with your phone camera</p>
+                <p><strong>Method 2:</strong> Enter room code manually below</p>
+                <p><strong>Method 3:</strong> Open the shared link directly</p>
+              </div>
+            </div>
+
             <div style={{ margin: '2rem 0' }}>
               <input
                 type="text"
-                placeholder="Enter room code..."
+                placeholder="Enter 6-digit room code..."
                 value={manualRoomId}
                 onChange={(e) => setManualRoomId(e.target.value.toUpperCase())}
+                onKeyPress={handleKeyPress}
+                maxLength={6}
                 style={{
                   padding: '1rem',
-                  fontSize: '1.2rem',
+                  fontSize: '1.5rem',
                   borderRadius: '10px',
                   border: 'none',
                   background: 'rgba(255, 255, 255, 0.1)',
                   color: 'white',
                   textAlign: 'center',
-                  marginRight: '1rem',
+                  marginBottom: '1rem',
                   backdropFilter: 'blur(10px)',
-                  minWidth: '200px'
+                  width: '200px',
+                  letterSpacing: '0.2em',
+                  fontWeight: 'bold'
                 }}
-                onKeyPress={(e) => e.key === 'Enter' && handleManualJoin()}
               />
-              <button className="button" onClick={handleManualJoin}>
-                Join Room
+              <br />
+              <button className="button" onClick={handleManualJoin} disabled={!manualRoomId.trim()}>
+                🚀 Join Room
               </button>
+            </div>
+
+            <div style={{ margin: '1rem 0', opacity: 0.7 }}>
+              <p>📱 <strong>For Phone Users:</strong> Simply point your camera at the QR code shown on the streaming device</p>
             </div>
           </div>
         ) : (
           <div>
             <div className="room-code">
-              Room: {roomId}
+              Connected to Room: {roomId}
             </div>
 
             {error && (
@@ -150,18 +218,49 @@ export default function ReceiverComponent() {
                 <div>
                   <div style={{ margin: '1rem 0' }}>
                     <span className="status-indicator"></span>
-                    <strong>Connected & Listening</strong>
+                    <strong style={{ fontSize: '1.1rem' }}>✅ Connected to Stream</strong>
                   </div>
-                  <p style={{ opacity: 0.8 }}>
-                    You're now connected to the audio stream!
-                  </p>
-                  <button className="button" onClick={enableAudio} style={{ marginTop: '1rem' }}>
-                    🔊 Enable Audio (if needed)
-                  </button>
+                  
+                  {isReceivingAudio ? (
+                    <div style={{ 
+                      background: 'rgba(76, 175, 80, 0.2)', 
+                      padding: '1rem', 
+                      borderRadius: '10px', 
+                      margin: '1rem 0',
+                      border: '1px solid rgba(76, 175, 80, 0.5)'
+                    }}>
+                      <span style={{ fontSize: '1.2rem' }}>🔴 LIVE</span>
+                      <br />
+                      <strong>Receiving Audio Stream!</strong>
+                    </div>
+                  ) : (
+                    <div style={{ 
+                      background: 'rgba(255, 193, 7, 0.2)', 
+                      padding: '1rem', 
+                      borderRadius: '10px', 
+                      margin: '1rem 0',
+                      border: '1px solid rgba(255, 193, 7, 0.5)'
+                    }}>
+                      ⏳ Waiting for audio stream to start...
+                      <br />
+                      <small>Ask the host to start streaming</small>
+                    </div>
+                  )}
+                  
+                  {!isAudioEnabled && (
+                    <button className="button" onClick={enableAudio} style={{ marginTop: '1rem' }}>
+                      🔊 Enable Audio
+                    </button>
+                  )}
+                  
+                  <div style={{ marginTop: '1.5rem', opacity: 0.8 }}>
+                    <p>🎧 Make sure your device volume is turned up</p>
+                    <p>📱 Keep this tab open to continue listening</p>
+                  </div>
                 </div>
               ) : (
                 <div>
-                  <p>Connecting to room...</p>
+                  <p>🔄 Connecting to room {roomId}...</p>
                   <div style={{ 
                     margin: '1rem 0', 
                     opacity: 0.7,
@@ -174,10 +273,6 @@ export default function ReceiverComponent() {
             </div>
           </div>
         )}
-        
-        <p style={{ opacity: 0.7, fontSize: '0.9rem', marginTop: '2rem' }}>
-          Make sure your device volume is turned up to hear the audio stream.
-        </p>
       </div>
     </div>
   );
