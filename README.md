@@ -120,15 +120,56 @@ The application uses a custom Next.js server (`server.js`) that combines:
 
 ## Troubleshooting
 
-### Audio Not Working?
-- Ensure you've granted permission for tab audio sharing
-- Check that your browser supports `getDisplayMedia` with audio
+### ⚠️ "Failed to start streaming" Error
+
+**Most Common Causes:**
+
+#### 1. "Not checking 'Share tab audio'" 
+**Step-by-step fix:**
+1. **BEFORE clicking "Start":** Make sure audio is playing in Spotify/Netflix/YouTube
+2. **Click "Start Tab Audio Streaming"**
+3. **Browser popup appears:** Select "Chrome Tab" (not "Entire Screen")
+4. **Select the tab** that's playing audio
+5. **⚠️ CRITICAL:** Check the "Share tab audio" checkbox
+6. **Click "Share"**
+
+#### 2. "MediaRecorder Error"
+**Symptoms:** "There was an error starting the MediaRecorder"
+
+**Solutions:**
+- **Use Chrome browser** (best compatibility)
+- **Update your browser** to the latest version
+- **Close other apps** that might be using audio (Discord, Zoom, etc.)
+- **Try different audio source** (YouTube instead of Spotify)
+- **Restart your browser** completely
+- **Check system audio** isn't muted or restricted
+
+#### 3. "Browser Compatibility"
+**Solutions:**
+- **Chrome:** ✅ Best support (recommended)
+- **Firefox:** ✅ Good support
+- **Edge:** ✅ Good support  
+- **Safari:** ⚠️ Limited support
+- **Mobile browsers:** ❌ Not supported for streaming (receiving only)
+
+**If it still doesn't work:**
+- Try the "🧪 Test Screen Share" button first
+- Ensure the tab is actually playing audio
+- Try refreshing both the audio tab and this app
+- Check browser console for detailed error messages
+
+### Audio Not Working on Receiver Side?
 - Make sure your device volume is turned up
+- Click "Enable Audio" button if prompted
+- Try refreshing the receiver page
+- Check that the streamer is actually streaming audio
 
 ### Connection Issues?
 - Verify the server is running on port 3000
 - Check that the port is available
 - Ensure no firewall is blocking the connections
+- Try refreshing the page if socket connection fails
+- Check browser console for WebSocket errors
 
 ## Deployment
 
